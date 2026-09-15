@@ -18,29 +18,26 @@ type Spot = {
   is_published: boolean;
 };
 
-const COLOR_MAP: Record<string, string> = {
-  "#ef4444": "赤",
-  "#ec4899": "ピンク",
-  "#f97316": "オレンジ",
-  "#eab308": "黄色",
-  "#22c55e": "緑",
-  "#06b6d4": "水色",
-  "#3b82f6": "青",
-  "#a855f7": "紫",
-  "#000000": "黒",
-  "#8b4513": "茶色",
-  "#d97706": "ベージュ",
-  "#6b7280": "グレー",
-  "#ffffff": "白",
-};
+// 全カラーの固定リスト
+const ALL_COLORS = [
+  { code: "#ef4444", name: "赤" },
+  { code: "#ec4899", name: "ピンク" },
+  { code: "#f97316", name: "オレンジ" },
+  { code: "#eab308", name: "黄色" },
+  { code: "#22c55e", name: "緑" },
+  { code: "#06b6d4", name: "水色" },
+  { code: "#3b82f6", name: "青" },
+  { code: "#a855f7", name: "紫" },
+  { code: "#000000", name: "黒" },
+  { code: "#8b4513", name: "茶色" },
+  { code: "#d97706", name: "ベージュ" },
+  { code: "#6b7280", name: "グレー" },
+  { code: "#ffffff", name: "白" },
+];
 
 export default function SpotFilter({ initialSpots }: { initialSpots: Spot[] }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedColor, setSelectedColor] = useState<string>("ALL");
-
-  const allColors = Array.from(
-    new Set(initialSpots.flatMap((spot) => spot.push_colors || [])),
-  );
 
   const filteredSpots = initialSpots.filter((spot) => {
     const matchesQuery =
@@ -51,7 +48,10 @@ export default function SpotFilter({ initialSpots }: { initialSpots: Spot[] }) {
 
     const matchesColor =
       selectedColor === "ALL" ||
-      (spot.push_colors && spot.push_colors.includes(selectedColor));
+      (spot.push_colors &&
+        spot.push_colors.some(
+          (c) => c.toLowerCase() === selectedColor.toLowerCase(),
+        ));
 
     return matchesQuery && matchesColor;
   });
@@ -70,46 +70,48 @@ export default function SpotFilter({ initialSpots }: { initialSpots: Spot[] }) {
           />
         </div>
 
-        {allColors.length > 0 && (
-          <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-slate-100 text-sm">
-            <span className="text-xs font-bold text-slate-500 mr-1">
-              推しカラー:
-            </span>
-            <button
-              onClick={() => setSelectedColor("ALL")}
-              className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition ${
-                selectedColor === "ALL"
-                  ? "bg-slate-800 text-white shadow-sm"
-                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-              }`}
-            >
-              すべて ({initialSpots.length})
-            </button>
+        <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-slate-100 text-sm">
+          <span className="text-xs font-bold text-slate-500 mr-1">
+            推しカラー:
+          </span>
+          <button
+            type="button"
+            onClick={() => setSelectedColor("ALL")}
+            className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition ${
+              selectedColor === "ALL"
+                ? "bg-slate-800 text-white shadow-sm"
+                : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+            }`}
+          >
+            すべて ({initialSpots.length})
+          </button>
 
-            {allColors.map((color) => {
-              const label = COLOR_MAP[color.toLowerCase()] || color;
-              const isSelected = selectedColor === color;
+          {ALL_COLORS.map((color) => {
+            const isSelected =
+              selectedColor.toLowerCase() === color.code.toLowerCase();
 
-              return (
-                <button
-                  key={color}
-                  onClick={() => setSelectedColor(color)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition ${
-                    isSelected
-                      ? "border-pink-500 bg-pink-50 text-pink-700 font-bold shadow-sm ring-2 ring-pink-400"
-                      : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                  }`}
-                >
-                  <span
-                    className="w-3 h-3 rounded-full border border-black/10 inline-block shrink-0"
-                    style={{ backgroundColor: color }}
-                  />
-                  {label}
-                </button>
-              );
-            })}
-          </div>
-        )}
+            return (
+              <button
+                key={color.code}
+                type="button"
+                onClick={() =>
+                  setSelectedColor(isSelected ? "ALL" : color.code)
+                }
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition ${
+                  isSelected
+                    ? "border-pink-500 bg-pink-50 text-pink-700 font-bold shadow-sm ring-2 ring-pink-400"
+                    : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                }`}
+              >
+                <span
+                  className="w-3 h-3 rounded-full border border-black/10 inline-block shrink-0"
+                  style={{ backgroundColor: color.code }}
+                />
+                {color.name}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* マップ */}
