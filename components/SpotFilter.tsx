@@ -27,8 +27,11 @@ const COLOR_MAP: Record<string, string> = {
   "#06b6d4": "水色",
   "#3b82f6": "青",
   "#a855f7": "紫",
-  "#1f2937": "黒",
-  "#f3f4f6": "白",
+  "#000000": "黒",
+  "#8b4513": "茶色",
+  "#d97706": "ベージュ",
+  "#6b7280": "グレー",
+  "#ffffff": "白",
 };
 
 export default function SpotFilter({ initialSpots }: { initialSpots: Spot[] }) {
