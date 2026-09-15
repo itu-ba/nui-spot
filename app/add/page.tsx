@@ -17,8 +17,11 @@ const COLOR_OPTIONS = [
   { label: "水色", code: "#06b6d4" },
   { label: "青", code: "#3b82f6" },
   { label: "紫", code: "#a855f7" },
-  { label: "黒", code: "#1f2937" },
-  { label: "白", code: "#f3f4f6" },
+  { name: "黒", code: "#000000" },
+  { name: "茶色", code: "#8b4513" },
+  { name: "ベージュ", code: "#d97706" },
+  { name: "グレー", code: "#6b7280" },
+  { name: "白", code: "#ffffff" },
 ];
 
 export default function AddSpotPage() {
