@@ -1,8 +1,29 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
+import dynamic from "next/dynamic";
+
+// MapPickerの型定義
+type MapPickerProps = {
+  lat: number;
+  lng: number;
+  onChangeLocation: (lat: number, lng: number) => void;
+};
+
+// MapPickerをSSR無効で動的インポート（1つに統合）
+const MapPicker = dynamic<MapPickerProps>(
+  () => import("@/components/MapPicker"),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="w-full h-64 bg-slate-100 rounded-xl flex items-center justify-center text-xs text-slate-400">
+        地図を読み込み中...
+      </div>
+    ),
+  },
+);
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
@@ -24,6 +45,10 @@ const COLOR_OPTIONS = [
   { label: "白", code: "#ffffff" },
 ];
 
+// デフォルト表示位置（東京駅周辺）
+const DEFAULT_LAT = 35.681236;
+const DEFAULT_LNG = 139.767125;
+
 export default function AddSpotPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
@@ -32,10 +57,101 @@ export default function AddSpotPage() {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [address, setAddress] = useState("");
-  const [latitude, setLatitude] = useState("");
-  const [longitude, setLongitude] = useState("");
+  const [latitude, setLatitude] = useState<number>(DEFAULT_LAT);
+  const [longitude, setLongitude] = useState<number>(DEFAULT_LNG);
   const [selectedColors, setSelectedColors] = useState<string[]>(["#ec4899"]);
   const [imageFile, setImageFile] = useState<File | null>(null);
+
+  // 1. 緯度経度から住所を取得（OpenStreetMap Nominatim API）
+  const fetchAddressFromCoords = async (lat: number, lng: number) => {
+    try {
+      // zoom=18 で一番細かい粒度まで検索
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&zoom=18&accept-language=ja`,
+      );
+
+      if (!res.ok) {
+        throw new Error(`HTTP error! status: ${res.status}`);
+      }
+
+      const data = await res.json();
+
+      if (data && data.display_name) {
+        const parts = data.display_name.split(",").map((p: string) => p.trim());
+
+        const filteredParts = parts.filter((part: string) => {
+          if (part === "日本" || part === "Japan") return false;
+          if (/^\d{3}-?\d{4}$/.test(part)) return false; // 郵便番号を除外
+          return true;
+        });
+
+        const fullAddress = filteredParts.reverse().join("");
+        setAddress(fullAddress || data.display_name);
+      }
+    } catch (err) {
+      console.error("住所の取得に失敗しました", err);
+    }
+  };
+
+  // 2. 地図上のピンが移動・タップされた時の処理
+  const handleLocationChange = (lat: number, lng: number) => {
+    setLatitude(lat);
+    setLongitude(lng);
+    fetchAddressFromCoords(lat, lng);
+  };
+
+  // 3. 現在地取得ボタンの押下処理
+  const handleCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      alert("お使いのブラウザは現在地取得に対応していません");
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const lat = position.coords.latitude;
+        const lng = position.coords.longitude;
+        handleLocationChange(lat, lng);
+      },
+      () => {
+        alert(
+          "現在地が取得できませんでした。位置情報の利用を許可してください。",
+        );
+      },
+    );
+  };
+
+  // 4. 初回レンダリング時（現在地が取れれば現在地、拒否・失敗ならデフォルト位置）
+  useEffect(() => {
+    const initLocation = async () => {
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            const lat = position.coords.latitude;
+            const lng = position.coords.longitude;
+            setLatitude(lat);
+            setLongitude(lng);
+            fetchAddressFromCoords(lat, lng);
+          },
+          (error) => {
+            console.warn(
+              "現在地の取得に失敗したため、デフォルト位置を使用します:",
+              error.message,
+            );
+            fetchAddressFromCoords(DEFAULT_LAT, DEFAULT_LNG);
+          },
+          {
+            timeout: 3000,
+            enableHighAccuracy: true,
+          },
+        );
+      } else {
+        // 非同期コンテキスト内で呼び出して同期的なsetStateを防ぐ
+        await fetchAddressFromCoords(DEFAULT_LAT, DEFAULT_LNG);
+      }
+    };
+
+    initLocation();
+  }, []);
 
   const toggleColor = (code: string) => {
     if (selectedColors.includes(code)) {
@@ -55,7 +171,6 @@ export default function AddSpotPage() {
     try {
       let imageUrl = "";
 
-      // 画像が選択されている場合、Supabase Storage へアップロード
       if (imageFile) {
         const fileExt = imageFile.name.split(".").pop();
         const fileName = `${Date.now()}-${Math.random().toString(36).substring(2, 7)}.${fileExt}`;
@@ -67,7 +182,6 @@ export default function AddSpotPage() {
 
         if (uploadError) throw uploadError;
 
-        // 公開URLを取得
         const { data: publicUrlData } = supabase.storage
           .from("spot-images")
           .getPublicUrl(filePath);
@@ -83,8 +197,8 @@ export default function AddSpotPage() {
           slug,
           description,
           address,
-          latitude: parseFloat(latitude),
-          longitude: parseFloat(longitude),
+          latitude,
+          longitude,
           push_colors: selectedColors,
           image_url: imageUrl || null,
           is_published: true,
@@ -117,8 +231,9 @@ export default function AddSpotPage() {
 
       <form
         onSubmit={handleSubmit}
-        className="space-y-4 bg-white p-6 rounded-xl shadow-md border"
+        className="space-y-5 bg-white p-6 rounded-xl shadow-md border border-slate-200"
       >
+        {/* スポット名 */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
             スポット名 *
@@ -129,10 +244,54 @@ export default function AddSpotPage() {
             placeholder="例: ○○カフェ 新宿店"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="w-full p-2 border rounded-md focus:ring-2 focus:ring-pink-400 outline-none"
+            className="w-full p-2.5 border rounded-md focus:ring-2 focus:ring-pink-400 outline-none text-sm"
           />
         </div>
 
+        {/* 位置情報の選択（地図＋現在地ボタン） */}
+        <div>
+          <div className="flex justify-between items-center mb-1.5">
+            <label className="block text-sm font-medium text-gray-700">
+              スポットの位置 *
+            </label>
+            <button
+              type="button"
+              onClick={handleCurrentLocation}
+              className="text-xs font-bold text-pink-600 hover:text-pink-700 flex items-center gap-1"
+            >
+              🎯 現在地を取得
+            </button>
+          </div>
+
+          <p className="text-xs text-slate-400 mb-2">
+            地図をタップまたはピンをドラッグして位置を調整できます。
+          </p>
+
+          <MapPicker
+            lat={latitude}
+            lng={longitude}
+            onChangeLocation={handleLocationChange}
+          />
+        </div>
+
+        {/* 住所 */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            住所 (ピン位置から自動設定)
+          </label>
+          <input
+            type="text"
+            placeholder="例: 東京都新宿区..."
+            value={address}
+            onChange={(e) => setAddress(e.target.value)}
+            className="w-full p-2.5 border rounded-md focus:ring-2 focus:ring-pink-400 outline-none text-sm bg-slate-50"
+          />
+          <p className="text-[11px] text-slate-400 mt-1">
+            ※自動入力後に番地（1-2-3等）や建物名を付け足すことができます。
+          </p>
+        </div>
+
+        {/* 画像アップロード */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
             画像アップロード
@@ -149,50 +308,7 @@ export default function AddSpotPage() {
           />
         </div>
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            住所
-          </label>
-          <input
-            type="text"
-            placeholder="例: 東京都新宿区..."
-            value={address}
-            onChange={(e) => setAddress(e.target.value)}
-            className="w-full p-2 border rounded-md focus:ring-2 focus:ring-pink-400 outline-none"
-          />
-        </div>
-
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              緯度 (Latitude) *
-            </label>
-            <input
-              type="number"
-              step="any"
-              required
-              placeholder="例: 35.6895"
-              value={latitude}
-              onChange={(e) => setLatitude(e.target.value)}
-              className="w-full p-2 border rounded-md focus:ring-2 focus:ring-pink-400 outline-none"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              経度 (Longitude) *
-            </label>
-            <input
-              type="number"
-              step="any"
-              required
-              placeholder="例: 139.6917"
-              value={longitude}
-              onChange={(e) => setLongitude(e.target.value)}
-              className="w-full p-2 border rounded-md focus:ring-2 focus:ring-pink-400 outline-none"
-            />
-          </div>
-        </div>
-
+        {/* 推しカラー */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
             おすすめ推しカラー（複数選択可）
@@ -212,7 +328,7 @@ export default function AddSpotPage() {
                   }`}
                 >
                   <span
-                    className="w-3.5 h-3.5 rounded-full border border-black/10 inline-block"
+                    className="w-3.5 h-3.5 rounded-full border border-black/10 inline-block shrink-0"
                     style={{ backgroundColor: c.code }}
                   />
                   {c.label}
@@ -222,6 +338,7 @@ export default function AddSpotPage() {
           </div>
         </div>
 
+        {/* メモ */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
             おすすめポイント・メモ
@@ -231,22 +348,23 @@ export default function AddSpotPage() {
             placeholder="ぬいの撮影スポットや光の入り方、メニューなど..."
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            className="w-full p-2 border rounded-md focus:ring-2 focus:ring-pink-400 outline-none"
+            className="w-full p-2.5 border rounded-md focus:ring-2 focus:ring-pink-400 outline-none text-sm"
           />
         </div>
 
-        <div className="flex gap-4 pt-4">
+        {/* 送信ボタン */}
+        <div className="flex gap-4 pt-2">
           <button
             type="button"
             onClick={() => router.back()}
-            className="w-1/2 py-2 px-4 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md font-medium transition"
+            className="w-1/2 py-2.5 px-4 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md font-medium text-sm transition"
           >
             キャンセル
           </button>
           <button
             type="submit"
             disabled={loading}
-            className="w-1/2 py-2 px-4 bg-pink-500 hover:bg-pink-600 text-white rounded-md font-medium disabled:opacity-50 transition"
+            className="w-1/2 py-2.5 px-4 bg-pink-500 hover:bg-pink-600 text-white rounded-md font-medium text-sm disabled:opacity-50 transition"
           >
             {loading ? "送信中..." : "登録する"}
           </button>
