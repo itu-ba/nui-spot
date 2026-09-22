@@ -11,8 +11,18 @@ type Spot = {
   address: string | null;
   latitude: number | null;
   longitude: number | null;
+  slug?: string;
+  description?: string;
+  push_colors?: string[];
+  image_url?: string;
+  is_published?: boolean;
 };
 
-export default function MapWrapper({ spots }: { spots: Spot[] }) {
-  return <Map spots={spots} />;
+type MapWrapperProps = {
+  spots: Spot[];
+  userLocation?: { lat: number; lng: number } | null;
+};
+
+export default function MapWrapper({ spots, userLocation }: MapWrapperProps) {
+  return <Map spots={spots} userLocation={userLocation} />;
 }

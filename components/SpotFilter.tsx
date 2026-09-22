@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import MapWrapper from "@/components/MapWrapper";
 import ColorBadge from "@/components/ColorBadge";
 import Link from "next/link";
@@ -38,6 +38,31 @@ const ALL_COLORS = [
 export default function SpotFilter({ initialSpots }: { initialSpots: Spot[] }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedColor, setSelectedColor] = useState<string>("ALL");
+  const [userLocation, setUserLocation] = useState<{
+    lat: number;
+    lng: number;
+  } | null>(null);
+
+  // 初回表示時に現在地を取得
+  useEffect(() => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          setUserLocation({
+            lat: position.coords.latitude,
+            lng: position.coords.longitude,
+          });
+        },
+        (error) => {
+          console.warn("現在地の取得に失敗しました:", error.message);
+        },
+        {
+          timeout: 5000,
+          enableHighAccuracy: true,
+        },
+      );
+    }
+  }, []);
 
   const filteredSpots = initialSpots.filter((spot) => {
     const matchesQuery =
@@ -114,8 +139,8 @@ export default function SpotFilter({ initialSpots }: { initialSpots: Spot[] }) {
         </div>
       </div>
 
-      {/* マップ */}
-      <MapWrapper spots={filteredSpots} />
+      {/* マップ（現在地情報を渡す） */}
+      <MapWrapper spots={filteredSpots} userLocation={userLocation} />
 
       {/* 一覧カード */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-8">
@@ -126,7 +151,7 @@ export default function SpotFilter({ initialSpots }: { initialSpots: Spot[] }) {
               href={`/spots/${spot.slug}`}
               className="group flex flex-col bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-md hover:border-pink-200 transition duration-200"
             >
-              {/* 画像エリア（画像が無い場合はダミーデザインを表示） */}
+              {/* 画像エリア */}
               <div className="w-full h-48 bg-slate-100 overflow-hidden relative">
                 {spot.image_url ? (
                   <img

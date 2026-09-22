@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
 import dynamic from "next/dynamic";
@@ -62,36 +62,41 @@ export default function AddSpotPage() {
   const [selectedColors, setSelectedColors] = useState<string[]>(["#ec4899"]);
   const [imageFile, setImageFile] = useState<File | null>(null);
 
-  // 1. 緯度経度から住所を取得（OpenStreetMap Nominatim API）
-  const fetchAddressFromCoords = async (lat: number, lng: number) => {
-    try {
-      // zoom=18 で一番細かい粒度まで検索
-      const res = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&zoom=18&accept-language=ja`,
-      );
+  // 1. 緯度経度から住所を取得（useCallbackでメモ化）
+  const fetchAddressFromCoords = useCallback(
+    async (lat: number, lng: number) => {
+      try {
+        // zoom=18 で一番細かい粒度まで検索
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&zoom=18&accept-language=ja`,
+        );
 
-      if (!res.ok) {
-        throw new Error(`HTTP error! status: ${res.status}`);
+        if (!res.ok) {
+          throw new Error(`HTTP error! status: ${res.status}`);
+        }
+
+        const data = await res.json();
+
+        if (data && data.display_name) {
+          const parts = data.display_name
+            .split(",")
+            .map((p: string) => p.trim());
+
+          const filteredParts = parts.filter((part: string) => {
+            if (part === "日本" || part === "Japan") return false;
+            if (/^\d{3}-?\d{4}$/.test(part)) return false; // 郵便番号を除外
+            return true;
+          });
+
+          const fullAddress = filteredParts.reverse().join("");
+          setAddress(fullAddress || data.display_name);
+        }
+      } catch (err) {
+        console.error("住所の取得に失敗しました", err);
       }
-
-      const data = await res.json();
-
-      if (data && data.display_name) {
-        const parts = data.display_name.split(",").map((p: string) => p.trim());
-
-        const filteredParts = parts.filter((part: string) => {
-          if (part === "日本" || part === "Japan") return false;
-          if (/^\d{3}-?\d{4}$/.test(part)) return false; // 郵便番号を除外
-          return true;
-        });
-
-        const fullAddress = filteredParts.reverse().join("");
-        setAddress(fullAddress || data.display_name);
-      }
-    } catch (err) {
-      console.error("住所の取得に失敗しました", err);
-    }
-  };
+    },
+    [],
+  );
 
   // 2. 地図上のピンが移動・タップされた時の処理
   const handleLocationChange = (lat: number, lng: number) => {
@@ -145,13 +150,12 @@ export default function AddSpotPage() {
           },
         );
       } else {
-        // 非同期コンテキスト内で呼び出して同期的なsetStateを防ぐ
         await fetchAddressFromCoords(DEFAULT_LAT, DEFAULT_LNG);
       }
     };
 
     initLocation();
-  }, []);
+  }, [fetchAddressFromCoords]);
 
   const toggleColor = (code: string) => {
     if (selectedColors.includes(code)) {
@@ -209,9 +213,13 @@ export default function AddSpotPage() {
 
       router.push("/");
       router.refresh();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Error inserting spot:", err);
-      setErrorMsg(err.message || "スポットの登録に失敗しました。");
+      if (err instanceof Error) {
+        setErrorMsg(err.message);
+      } else {
+        setErrorMsg("スポットの登録に失敗しました。");
+      }
     } finally {
       setLoading(false);
     }
